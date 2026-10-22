@@ -4,7 +4,8 @@ name: Gerar APK Xadrez Visual Brave
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -12,34 +13,59 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Extrair projeto
+      - name: Verificar arquivo do projeto
         run: |
+          test -f xadrez-visual-brave-dev-source.zip
+          mkdir -p /tmp/projeto
           unzip -q xadrez-visual-brave-dev-source.zip -d /tmp/projeto
           echo "PROJECT_DIR=/tmp/projeto/xadrez-visual-android-main" >> "$GITHUB_ENV"
+          test -f /tmp/projeto/xadrez-visual-android-main/app/build.gradle
 
       - name: Preparar Stockfish
-        run: cd "$PROJECT_DIR" && python3 scripts/prepare_engine.py
+        run: |
+          cd "$PROJECT_DIR"
+          python3 scripts/prepare_engine.py
+
+      - name: Testar regras de xadrez
+        run: |
+          cd "$PROJECT_DIR"
+          mkdir -p /tmp/chess-tests
+          javac -d /tmp/chess-tests app/src/main/java/br/com/xadrezvisual/Board.java tests/BoardTest.java
+          java -Xmx512m -cp /tmp/chess-tests BoardTest
+
+      - name: Instalar ferramentas Android
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "sdk.dir=$SDK" > "$PROJECT_DIR/local.properties"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Compilar APK
-        run: cd "$PROJECT_DIR" && gradle :app:assembleDebug --console=plain
+        run: |
+          cd "$PROJECT_DIR"
+          gradle :app:assembleDebug --console=plain
 
-      - uses: actions/upload-artifact@v4
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
         with:
           name: XadrezVisual-Brave-APK
           path: /tmp/projeto/xadrez-visual-android-main/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           retention-days: 30
           
