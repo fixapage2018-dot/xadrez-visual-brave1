@@ -4,8 +4,7 @@ name: Gerar APK Xadrez Visual Brave
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
@@ -13,7 +12,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
@@ -29,20 +27,22 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Verificar arquivo do projeto
+      - name: Extrair projeto
         run: |
-          test -f xadrez-visual-brave-dev-source.zip
+          set -eu
+          ZIP="$(find . -maxdepth 1 -type f -name '*source.zip' | head -n 1)"
+          test -n "$ZIP"
           mkdir -p /tmp/projeto
-          unzip -q xadrez-visual-brave-dev-source.zip -d /tmp/projeto
-          echo "PROJECT_DIR=/tmp/projeto/xadrez-visual-android-main" >> "$GITHUB_ENV"
-          test -f /tmp/projeto/xadrez-visual-android-main/app/build.gradle
+          unzip -q "$ZIP" -d /tmp/projeto
+          GRADLE_FILE="$(find /tmp/projeto -maxdepth 4 -path '*/app/build.gradle' -print -quit)"
+          test -n "$GRADLE_FILE"
+          PROJECT_DIR="${GRADLE_FILE%/app/build.gradle}"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Preparar Stockfish
-        run: |
-          cd "$PROJECT_DIR"
-          python3 scripts/prepare_engine.py
+        run: cd "$PROJECT_DIR" && python3 scripts/prepare_engine.py
 
-      - name: Testar regras de xadrez
+      - name: Testar regras
         run: |
           cd "$PROJECT_DIR"
           mkdir -p /tmp/chess-tests
@@ -57,15 +57,13 @@ jobs:
           "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Compilar APK
-        run: |
-          cd "$PROJECT_DIR"
-          gradle :app:assembleDebug --console=plain
+        run: cd "$PROJECT_DIR" && gradle :app:assembleDebug --console=plain
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: XadrezVisual-Brave-APK
-          path: /tmp/projeto/xadrez-visual-android-main/app/build/outputs/apk/debug/app-debug.apk
+          path: /tmp/projeto/**/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
           
